@@ -1,0 +1,362 @@
+from collections import deque
+
+def find_A_position(grid):
+    """
+    Finds the (row, col) position of 'A' in the grid.
+    Assumes exactly one 'A' is present.
+    """
+    for r in range(len(grid)):
+        for c in range(len(grid[0])):
+            if grid[r][c] == 'A':
+                return (r, c)
+    return None  # If not found, though the problem states there will always be one 'A'
+
+def find_all_E_positions(grid):
+    """
+    Returns a list of all (row, col) positions marked 'E' in the grid.
+    """
+    positions = []
+    for r in range(len(grid)):
+        for c in range(len(grid[0])):
+            if grid[r][c] == 'E':
+                positions.append((r, c))
+    return positions
+
+def is_valid(r, c, grid):
+    """
+    Checks if a given (row, col) is within bounds and not an obstacle 'O'.
+    """
+    rows = len(grid)
+    cols = len(grid[0])
+    if r < 0 or r >= rows or c < 0 or c >= cols:
+        return False
+    if grid[r][c] == 'O':
+        return False
+    return True
+
+def get_neighbors(r, c, grid, allow_diagonal=False):
+    """
+    Returns valid neighbor cells from (r, c). If allow_diagonal is True,
+    it will return up to 8 directions. Otherwise, it returns 4 directions.
+    """
+    directions_4 = [(-1, 0), (1, 0), (0, -1), (0, 1)]
+    directions_8 = [
+        (-1, 0), (1, 0), (0, -1), (0, 1),
+        (-1, -1), (-1, 1), (1, -1), (1, 1)
+    ]
+    result = []
+    moves = directions_8 if allow_diagonal else directions_4
+    for dr, dc in moves:
+        nr, nc = r + dr, c + dc
+        if is_valid(nr, nc, grid):
+            result.append((nr, nc))
+    return result
+
+def bfs_find_path(start, goal, grid, allow_diagonal=False):
+    """
+    Performs a BFS to find the shortest path from start to goal.
+    Returns the path as a list of directions (e.g. ["UP", "RIGHT", ...]).
+    If no path is found, returns None.
+    """
+    # For reconstructing the path, we keep track of (row, col) -> (prev_row, prev_col)
+    # and also which move we made to get there.
+    directions_map = {
+        (-1, 0): "UP",
+         (1, 0): "DOWN",
+         (0, -1): "LEFT",
+         (0, 1): "RIGHT",
+         (-1, -1): "UPLEFT",
+         (-1, 1): "UPRIGHT",
+         (1, -1): "DOWNLEFT",
+         (1, 1): "DOWNRIGHT"
+    }
+    queue = deque()
+    visited = set()
+    start_r, start_c = start
+    goal_r, goal_c = goal
+    queue.append(start)
+    visited.add(start)
+    # To reconstruct the path
+    parent = dict()
+    parent[start] = None  # No parent for start
+    # BFS
+    while queue:
+        current = queue.popleft()
+        if current == goal:
+            break
+        cur_r, cur_c = current
+        for nxt in get_neighbors(cur_r, cur_c, grid, allow_diagonal):
+            if nxt not in visited:
+                visited.add(nxt)
+                parent[nxt] = current
+                queue.append(nxt)
+    # If goal not reached, return None
+    if goal not in parent:
+        return None
+    # Reconstruct path by traversing parent dict backward from goal to start
+    path_cells = []
+    curr = goal
+    while curr != start:
+        path_cells.append(curr)
+        curr = parent[curr]
+    path_cells.reverse()
+    # Now translate cell-to-cell moves into directions
+    directions = []
+    previous = start
+    for cell in path_cells:
+        dr = cell[0] - previous[0]
+        dc = cell[1] - previous[1]
+        directions.append(directions_map[(dr, dc)])
+        previous = cell
+    return directions
+
+def path_cost(start, goal, grid, allow_diagonal=False):
+    """
+    Returns the number of moves in the shortest path from start to goal,
+    or a large number if no path exists.
+    """
+    path = bfs_find_path(start, goal, grid, allow_diagonal)
+    if path is None:
+        return float('inf')
+    return len(path)
+
+def solve_grid(grid, start_pos, carry_limit, cost_per_step, is_diagonals_allowed, max_actions):
+    """
+    Returns a list of actions (strings) to collect as many 'E' as possible
+    and drop them at 'A' (the starting cell).
+
+    This code has been modified to allow the agent to collect multiple
+    'E's in one trip, up to its carry capacity (`carry_limit`), and to
+    consider the action limit (`max_actions`) and cost per step (`cost_per_step`).
+    """
+    actions_taken = 0
+    action_list = []
+
+    # 1. Find 'A' (Home) position
+    start_pos = find_A_position(grid)
+    if not start_pos:
+        return []  # No 'A' found, return empty
+    start_row, start_col = start_pos
+    current_position = start_pos
+
+    # 2. Find all 'E' positions
+    energy_positions = find_all_E_positions(grid)
+    collected_positions = set()  # Keep track of collected 'E's
+
+    carried_tokens = 0
+
+    while actions_taken < max_actions and len(collected_positions) < len(energy_positions):
+        if carried_tokens >= carry_limit:
+            # Need to return home and drop
+            path_home = bfs_find_path(current_position, start_pos, grid, is_diagonals_allowed)
+            if path_home is None:
+                # Can't return home, finish
+                break
+            for step in path_home:
+                action_list.append(step)
+                actions_taken += 1
+                current_position = move(current_position, step)
+                if actions_taken >= max_actions:
+                    break
+            if actions_taken >= max_actions:
+                break
+            # DROP
+            action_list.append("DROP")
+            actions_taken += 1
+            carried_tokens = 0
+            current_position = start_pos
+            continue
+
+        # Find the nearest uncollected 'E' that can be collected and returned home within remaining actions
+        uncollected_E_positions = [pos for pos in energy_positions if pos not in collected_positions]
+        min_total_trip_cost = None
+        next_E = None
+        path_to_E = None
+        path_home = None
+
+        for e_pos in uncollected_E_positions:
+            # Path to 'E'
+            path_to_e = bfs_find_path(current_position, e_pos, grid, is_diagonals_allowed)
+            if path_to_e is None:
+                continue
+            cost_to_e = len(path_to_e)
+
+            # Path from 'E' to home
+            path_to_home = bfs_find_path(e_pos, start_pos, grid, is_diagonals_allowed)
+            if path_to_home is None:
+                continue
+            cost_home = len(path_to_home)
+
+            total_actions_needed = cost_to_e + cost_home + 2  # +2 for TAKE and DROP
+
+            # Estimate total move cost considering cost_per_step
+            total_move_cost = (cost_to_e + cost_home) * cost_per_step
+
+            # Net gain would be the number of tokens carried minus move cost
+            net_gain = carried_tokens + 1 - total_move_cost
+
+            remaining_actions = max_actions - actions_taken
+            if remaining_actions < total_actions_needed:
+                continue  # Not enough actions left
+
+            # Choose the 'E' with minimal total trip cost
+            if min_total_trip_cost is None or total_actions_needed < min_total_trip_cost:
+                min_total_trip_cost = total_actions_needed
+                next_E = e_pos
+                path_to_E = path_to_e
+                path_home = path_to_home
+
+        if next_E is None:
+            # No more 'E's can be collected, need to return home if carrying any tokens
+            if carried_tokens > 0 and current_position != start_pos:
+                path_home = bfs_find_path(current_position, start_pos, grid, is_diagonals_allowed)
+                if path_home is None:
+                    break
+                for step in path_home:
+                    action_list.append(step)
+                    actions_taken +=1
+                    current_position = move(current_position, step)
+                    if actions_taken >= max_actions:
+                        break
+                if actions_taken >= max_actions:
+                    break
+                # DROP
+                action_list.append("DROP")
+                actions_taken +=1
+                carried_tokens = 0
+                current_position = start_pos
+            break  # Cannot collect more 'E's
+
+        # Move to 'E'
+        for step in path_to_E:
+            action_list.append(step)
+            actions_taken += 1
+            current_position = move(current_position, step)
+            if actions_taken >= max_actions:
+                break
+        if actions_taken >= max_actions:
+            break
+
+        # TAKE
+        action_list.append("TAKE")
+        actions_taken +=1
+        carried_tokens +=1
+        collected_positions.add(next_E)
+
+        if actions_taken >= max_actions:
+            break
+
+    # After collecting, if carrying tokens, return home and DROP
+    if carried_tokens > 0 and current_position != start_pos and actions_taken < max_actions:
+        path_home = bfs_find_path(current_position, start_pos, grid, is_diagonals_allowed)
+        if path_home is not None:
+            for step in path_home:
+                action_list.append(step)
+                actions_taken +=1
+                current_position = move(current_position, step)
+                if actions_taken >= max_actions:
+                    break
+        if actions_taken < max_actions:
+            # DROP
+            action_list.append("DROP")
+            actions_taken +=1
+            carried_tokens = 0
+    return action_list
+
+def move(current_position, direction):
+    """
+    Moves from current_position in the given direction.
+    Returns the new position as a tuple (row, col).
+    """
+    direction_moves = {
+        "UP": (-1, 0),
+        "DOWN": (1, 0),
+        "LEFT": (0, -1),
+        "RIGHT": (0, 1),
+        "UPLEFT": (-1, -1),
+        "UPRIGHT": (-1, 1),
+        "DOWNLEFT": (1, -1),
+        "DOWNRIGHT": (1, 1)
+    }
+    dr, dc = direction_moves[direction]
+    r, c = current_position
+    return r + dr, c + dc
+
+def parse_grid(grid_string):
+    """Parse the grid string into a 2D grid and locate agent, energy tokens."""
+    lines = grid_string.strip().split('\n')
+    # Skip header lines and extract rows with actual grid data
+    grid_lines = [line for line in lines if '|' in line]
+    
+    # Extract grid data
+    grid = []
+    for line in grid_lines:
+        # Split by | and remove empty cells
+        cells = line.split('|')
+        row = []
+        for cell in cells[1:-1]:  # Skip first and last empty elements
+            if 'A' in cell:
+                row.append('A')
+            elif 'E' in cell:
+                row.append('E')
+            elif 'O' in cell:
+                row.append('O')
+            else:
+                row.append(' ')
+        grid.append(row)
+    
+    # Find agent position
+    agent_pos = None
+    energy_positions = []
+    for i in range(len(grid)):
+        for j in range(len(grid[i])):
+            if grid[i][j] == 'A':
+                agent_pos = (i, j)
+            elif grid[i][j] == 'E':
+                energy_positions.append((i, j))
+    
+    return grid, agent_pos, energy_positions
+
+def solve(grid_str, start_pos, movement_type, carry_limit, cost_per_step, max_actions=20):
+    grid, _, _ = parse_grid(grid_str)
+    actions = solve_grid(grid, tuple(start_pos), carry_limit, cost_per_step, (movement_type == 'eight'), max_actions)
+    return actions
+
+def main():
+    # Example usage:
+    # Define the sample grid
+    sample_grid = [
+        [' ', ' ', 'E', 'E', 'E', 'E', ' ', 'E', 'E', 'E', 'E'],
+        [' ', ' ', 'E', 'E', 'E', ' ', ' ', ' ', ' ', 'E', ' '],
+        ['E', ' ', ' ', ' ', 'E', ' ', ' ', 'E', 'E', ' ', ' '],
+        ['E', 'E', 'E', 'E', ' ', 'E', 'E', 'E', ' ', 'E', 'E'],
+        [' ', 'E', ' ', 'A', 'E', ' ', 'E', ' ', 'E', 'E', ' '],
+        ['E', ' ', 'E', ' ', 'E', 'E', ' ', 'E', ' ', 'E', ' '],
+        ['E', ' ', 'E', ' ', ' ', ' ', ' ', 'E', 'E', 'E', 'E'],
+        ['E', 'E', ' ', ' ', ' ', ' ', 'E', ' ', 'E', 'E', ' '],
+        ['E', ' ', 'E', 'E', 'E', ' ', ' ', ' ', 'E', 'E', ' '],
+        [' ', ' ', 'E', 'E', 'E', ' ', 'E', ' ', ' ', ' ', ' '],
+        [' ', 'E', 'E', ' ', 'E', 'E', ' ', 'E', ' ', 'E', 'E']
+    ]
+
+    # Starting position (4, 3)
+    start_position = (4, 3)
+
+    # Carry limit
+    carry_limit = 3
+
+    # Cost per step
+    cost_per_step = 0.3  # Assuming each movement costs 1 action
+
+    # Diagonals allowed
+    diagonals_allowed = True
+
+    # Actions to take
+    actions = solve_grid(sample_grid, start_position, carry_limit, cost_per_step, diagonals_allowed, max_actions=20)
+
+    # Output the actions
+    print("Actions to take:", len(actions))
+    print(actions)
+
+if __name__ == "__main__":
+    main()

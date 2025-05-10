@@ -1,0 +1,302 @@
+from collections import deque
+
+def solve(grid, start_direction):
+    """
+    Solve the grid-based door unlocking game.
+    Args:
+        grid: 2D list representing the environment
+        start_direction: Starting direction of the agent (UP, DOWN, LEFT, RIGHT)
+    Returns:
+        List of actions to complete the task
+    """
+    # Initialize agent state
+    agent_position = find_agent(grid)
+    agent_direction = start_direction
+    actions = []
+    
+    # Create a copy of the grid for pathfinding (replace AGENT with empty space)
+    grid_copy = [row[:] for row in grid]
+    grid_copy[agent_position[0]][agent_position[1]] = ""
+    
+    # Find key and door positions
+    key_position = find_object(grid, "KEY")
+    door_position = find_object(grid, "DOOR")
+    
+    # Current position of the agent (after removing from grid for path finding)
+    current_position = agent_position
+    holding_key = False
+    
+    # Check if key and door are adjacent
+    key_door_adjacent = are_adjacent(key_position, door_position)
+    
+    # PHASE 1: Navigate to key and pick it up
+    if key_position:
+        # Check if the key is directly adjacent to the agent
+        adjacent_directions = get_adjacent_directions(current_position, key_position)
+        if adjacent_directions:
+            # The key is adjacent to the agent
+            direction_to_key = adjacent_directions[0]
+            # Turn to face the key
+            turn_actions = turn_to_direction(agent_direction, direction_to_key)
+            actions.extend(turn_actions)
+            agent_direction = direction_to_key
+            # Pick up the key
+            actions.append("PICKUP")
+            holding_key = True
+        else:
+            # The key is not adjacent - find path to get near it
+            paths_to_key = []
+            # Check all four adjacent positions to the key
+            directions = [[-1, 0], [0, 1], [1, 0], [0, -1]]  # Up, Right, Down, Left
+            direction_names = ["DOWN", "LEFT", "UP", "RIGHT"]  # Opposite direction to face
+            
+            # Find all possible adjacent positions to the key
+            valid_key_adjacent_positions = []
+            
+            # If key and door are adjacent, we need special handling
+            if key_door_adjacent:
+                # First identify the relative position of the door to the key
+                door_rel_row = door_position[0] - key_position[0]
+                door_rel_col = door_position[1] - key_position[1]
+                
+                # Add positions that allow us to pick up the key while not being in the door's position
+                for i, (dx, dy) in enumerate(directions):
+                    adj_pos = [key_position[0] + dx, key_position[1] + dy]
+                    # Skip the door position
+                    if adj_pos[0] == door_position[0] and adj_pos[1] == door_position[1]:
+                        continue
+                    if is_valid_empty_cell(grid_copy, adj_pos):
+                        valid_key_adjacent_positions.append((adj_pos, direction_names[i]))
+            else:
+                # Standard approach when key and door are not adjacent
+                for i, (dx, dy) in enumerate(directions):
+                    adj_pos = [key_position[0] + dx, key_position[1] + dy]
+                    if is_valid_empty_cell(grid_copy, adj_pos):
+                        valid_key_adjacent_positions.append((adj_pos, direction_names[i]))
+                
+            # Find paths to these valid adjacent positions
+            for pos, direction in valid_key_adjacent_positions:
+                path = find_path(grid_copy, current_position, [pos])
+                if path:
+                    paths_to_key.append((path, direction))
+            
+            # Choose shortest path
+            if paths_to_key:
+                paths_to_key.sort(key=lambda x: len(x[0]))
+                best_path, face_direction = paths_to_key[0]
+                
+                # Navigate to the position adjacent to key
+                for next_pos in best_path:
+                    direction_to_move = determine_direction(current_position, next_pos)
+                    # Turn to face the right direction
+                    turn_actions = turn_to_direction(agent_direction, direction_to_move)
+                    actions.extend(turn_actions)
+                    agent_direction = direction_to_move
+                    # Move forward
+                    actions.append("MOVE")
+                    current_position = next_pos
+                
+                # Face the key
+                turn_actions = turn_to_direction(agent_direction, face_direction)
+                actions.extend(turn_actions)
+                agent_direction = face_direction
+                
+                # Pick up the key
+                actions.append("PICKUP")
+                holding_key = True
+    
+    # PHASE 2: Navigate to door and unlock it
+    if door_position and holding_key:
+        # Check if the door is directly adjacent to the agent
+        adjacent_directions = get_adjacent_directions(current_position, door_position)
+        if adjacent_directions:
+            # The door is adjacent to the agent
+            direction_to_door = adjacent_directions[0]
+            # Turn to face the door
+            turn_actions = turn_to_direction(agent_direction, direction_to_door)
+            actions.extend(turn_actions)
+            agent_direction = direction_to_door
+            # Unlock the door
+            actions.append("UNLOCK")
+        else:
+            # Similar approach for the door when it's not adjacent
+            paths_to_door = []
+            # Check all four adjacent positions to the door
+            directions = [[-1, 0], [0, 1], [1, 0], [0, -1]]  # Up, Right, Down, Left
+            direction_names = ["DOWN", "LEFT", "UP", "RIGHT"]  # Opposite direction to face
+            
+            for i, (dx, dy) in enumerate(directions):
+                adjacent_pos = [door_position[0] + dx, door_position[1] + dy]
+                # Skip invalid positions
+                if not is_valid_empty_cell(grid_copy, adjacent_pos):
+                    continue
+                    
+                path = find_path(grid_copy, current_position, [adjacent_pos])
+                if path:
+                    paths_to_door.append((path, direction_names[i]))
+            
+            # Choose shortest path
+            if paths_to_door:
+                paths_to_door.sort(key=lambda x: len(x[0]))
+                best_path, face_direction = paths_to_door[0]
+                
+                # Navigate to the position adjacent to door
+                for next_pos in best_path:
+                    direction_to_move = determine_direction(current_position, next_pos)
+                    # Turn to face the right direction
+                    turn_actions = turn_to_direction(agent_direction, direction_to_move)
+                    actions.extend(turn_actions)
+                    agent_direction = direction_to_move
+                    # Move forward
+                    actions.append("MOVE")
+                    current_position = next_pos
+                
+                # Face the door
+                turn_actions = turn_to_direction(agent_direction, face_direction)
+                actions.extend(turn_actions)
+                agent_direction = face_direction
+                
+                # Unlock the door
+                actions.append("UNLOCK")
+    
+    return actions
+
+def are_adjacent(pos1, pos2):
+    """Check if two positions are adjacent to each other."""
+    if not pos1 or not pos2:
+        return False
+    # Check horizontal and vertical adjacency
+    return (abs(pos1[0] - pos2[0]) == 1 and pos1[1] == pos2[1]) or \
+           (abs(pos1[1] - pos2[1]) == 1 and pos1[0] == pos2[0])
+
+def get_adjacent_directions(position, target_position):
+    """
+    Check if target is adjacent to the position and return directions to face it.
+    """
+    directions = []
+    # Check UP
+    if position[0] - 1 == target_position[0] and position[1] == target_position[1]:
+        directions.append("UP")
+    # Check RIGHT
+    if position[0] == target_position[0] and position[1] + 1 == target_position[1]:
+        directions.append("RIGHT")
+    # Check DOWN
+    if position[0] + 1 == target_position[0] and position[1] == target_position[1]:
+        directions.append("DOWN")
+    # Check LEFT
+    if position[0] == target_position[0] and position[1] - 1 == target_position[1]:
+        directions.append("LEFT")
+    
+    return directions
+
+def find_agent(grid):
+    """Find the agent's position in the grid."""
+    for i in range(len(grid)):
+        for j in range(len(grid[0])):
+            if grid[i][j] == "AGENT":
+                return [i, j]
+    return None
+
+def find_object(grid, object_type):
+    """Find the position of a specific object in the grid."""
+    for i in range(len(grid)):
+        for j in range(len(grid[0])):
+            if grid[i][j] == object_type:
+                return [i, j]
+    return None
+
+def is_valid_empty_cell(grid, position):
+    """Check if a cell is within grid bounds and is empty."""
+    row, col = position
+    if row < 0 or row >= len(grid) or col < 0 or col >= len(grid[0]):
+        return False
+    return grid[row][col] == ""
+
+def find_path(grid, start, targets):
+    """
+    Use BFS to find shortest path from start to any of the target positions.
+    Args:
+        grid: The game grid
+        start: Starting position [row, col]
+        targets: List of potential target positions
+    Returns:
+        Path from start to the closest target (excluding the target itself)
+    """
+    if not targets:
+        return []
+    
+    queue = deque([start])
+    visited = {tuple(start): None}  # Maps positions to their parent
+    target_set = {tuple(pos) for pos in targets}
+    
+    while queue:
+        current = queue.popleft()
+        current_tuple = tuple(current)
+        
+        # Check if current position is a target
+        if current_tuple in target_set:
+            # Reconstruct path from start to target
+            path = []
+            while current_tuple != tuple(start):
+                path.append(list(current_tuple))
+                current_tuple = visited[current_tuple]
+            return path[::-1]  # Reverse path to get start -> target
+        
+        # Explore all four directions
+        directions = [[-1, 0], [0, 1], [1, 0], [0, -1]]  # Up, Right, Down, Left
+        for dx, dy in directions:
+            new_pos = [current[0] + dx, current[1] + dy]
+            new_pos_tuple = tuple(new_pos)
+            
+            if (is_valid_empty_cell(grid, new_pos) and
+                new_pos_tuple not in visited):
+                queue.append(new_pos)
+                visited[new_pos_tuple] = current_tuple
+    
+    return []  # No path found
+
+def determine_direction(current_pos, target_pos):
+    """Determine the direction from current position to target position."""
+    if target_pos[0] < current_pos[0]:
+        return "UP"
+    elif target_pos[0] > current_pos[0]:
+        return "DOWN"
+    elif target_pos[1] < current_pos[1]:
+        return "LEFT"
+    elif target_pos[1] > current_pos[1]:
+        return "RIGHT"
+    return None
+
+def turn_to_direction(current_direction, target_direction):
+    """Generate turning actions to change from current direction to target direction."""
+    if current_direction == target_direction:
+        return []
+    
+    directions = ["UP", "RIGHT", "DOWN", "LEFT"]
+    current_idx = directions.index(current_direction)
+    target_idx = directions.index(target_direction)
+    
+    # Calculate the number of turns needed in each direction
+    left_turns = (4 + current_idx - target_idx) % 4
+    right_turns = (4 + target_idx - current_idx) % 4
+    
+    # Choose the shorter turning direction
+    if left_turns <= right_turns:
+        return ["LEFT"] * left_turns
+    else:
+        return ["RIGHT"] * right_turns
+
+if __name__ == "__main__":
+    # Example grid and direction
+    grid = [
+["WALL","WALL","WALL","WALL","WALL","WALL","WALL","WALL","WALL","WALL","WALL"],
+["WALL","","","","KEY","WALL","","","","","WALL"],
+["WALL","","","AGENT","","WALL","","","","","WALL"],
+["WALL","","","","","DOOR","","","","","WALL"],
+["WALL","","","","","WALL","","","","","WALL"],
+["WALL","WALL","WALL","WALL","WALL","WALL","WALL","WALL","WALL","WALL","WALL"]
+    ]
+    direction = "RIGHT"
+    
+    actions = solve(grid, direction)
+    print("Actions to solve the game:", actions)
