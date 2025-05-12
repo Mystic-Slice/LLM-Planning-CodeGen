@@ -107,7 +107,7 @@ class GridEnvironment:
             else:
                 return False
 
-    def load_grid(self, grid_string, return_agent_position=False):
+    def load_grid(self, grid_string):
         lines = grid_string.strip().split('\n')
         grid_start_index = 2
 
@@ -128,44 +128,6 @@ class GridEnvironment:
                     self.grid[x][y].place_energy()
                 elif cell_content == 'O':
                     self.grid[x][y].set_obstacle()
-                elif cell_content == 'A':
-                    agent_position = (x, y)
-        if return_agent_position:
-            return agent_position
-        
-    def to_string(self, agent_position=None, start_position=None):
-        rows = self.grid_size
-        cols = self.grid_size
-
-        agent_position = tuple(agent_position) if agent_position else None
-        start_position = tuple(start_position) if start_position else None
-
-        # Print column indices
-        header = "  "
-        for i in range(cols):
-            header += f"  {i} "
-        grid_str = header
-
-        # Print top border
-        grid_str += "\n" + ("  +" + "---+" * cols)
-
-        # Print each row with its index and contents
-        for i, row in enumerate(self.grid):
-            row_str = f"{i:<2}|"
-            for j, cell in enumerate(row):
-                if agent_position and (i, j) == agent_position:
-                    row_str += " A |"
-                elif cell.obstacle:
-                    row_str += " O |"
-                elif start_position and (i, j) == start_position:
-                    row_str += "   |"
-                elif cell.has_energy():
-                    row_str += " E |"
-                else:                
-                    row_str += "   |"
-            grid_str += "\n" + (row_str)
-            grid_str += "\n" + ("  +" + "---+" * cols)
-        return grid_str
 
     def get_opposite_direction(self, direction):
         opposite = {
@@ -320,3 +282,4 @@ class GridEnvironment:
             result.append('take')
 
         return result
+
