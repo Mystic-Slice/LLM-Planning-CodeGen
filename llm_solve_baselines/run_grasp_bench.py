@@ -1,17 +1,28 @@
 import os
 from grasp.util import *
 from openrouter import call_openrouter
-from baselines.grasp_prompts import get_plain_prompt
+from llm_solve_baselines.grasp_prompts import get_plain_prompt
 import re
 import glob
+from tqdm import tqdm
 
 data = []
+counter = 0
 NUM_GRIDS_PER_DATASET = 10
 for datafile in glob.glob("grasp/data/grids/inner_*.jsonl"):
     print(f"Found data file: {datafile}")
     data += load_jsonl(datafile)[:NUM_GRIDS_PER_DATASET]
+    counter += len(load_jsonl(datafile))
+
+for datafile in glob.glob("grasp/data/grids/outer_*.jsonl"):
+    counter += len(load_jsonl(datafile))
+
+# data.reverse()
 
 MODEL = 'openai/o3-mini'
+MODEL = 'openai/gpt-4o'
+MODEL = 'google/gemini-2.5-pro'
+# MODEL = 'anthropic/claude-3.7-sonnet'
 
 base_prompt = get_plain_prompt("eight", 2, 0.3)
 
@@ -114,12 +125,13 @@ METHODS = {
 }
 
 results = []
-for i, d in enumerate(data):
+for i, d in tqdm(enumerate(data), total=len(data)):
     print(f"Processing grid {i+1}/{len(data)}")
     dataset = f"{d['start_position']}_{d['energy']}_{d['obstacle']}"
     for method, func in METHODS.items():
         print(f"Running {method} method")
-        output_dir = f"grasp_results/{method}"
+        model_name = MODEL.replace("/", '-')
+        output_dir = f"grasp_results/{model_name}/{method}"
         output_file_name = f"{output_dir}/{dataset}_{d['index']}.json"
 
         # check if file already exists
@@ -140,3 +152,5 @@ for i, d in enumerate(data):
         # Write to json
         with open(output_file_name, "w") as f:
             f.write(json.dumps(d))
+
+print(counter)

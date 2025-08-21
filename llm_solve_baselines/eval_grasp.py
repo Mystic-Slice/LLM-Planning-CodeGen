@@ -4,7 +4,7 @@ import re
 from grasp.check_energy import check_energy_result
 from grasp.util import load_jsonl
 
-RESULT_FILES = glob.glob(f"grasp_results/*/*.json")
+RESULT_FILES = glob.glob(f"grasp_results/*/*/*.json")
 
 df = []
 
@@ -23,19 +23,32 @@ def extract_final_answer(response):
 for i, result_file in enumerate(RESULT_FILES):
     print(f"Processing {i+1}/{len(RESULT_FILES)}: {result_file}\r", end="")
     split_file = result_file.split("\\")
-    method = split_file[1]
+    model_name = split_file[1]
+    method = split_file[2]
 
     filename = split_file[-1].split(".")[0]
     dataset_name = "_".join(filename.split("_")[:-1])
 
+
+    # print(f"Model: {model_name}")
+    # print(f"Dataset: {dataset_name}")
+    # print(f"Prompt: {prompt_type}")
+    # print(f"Movement: {movement_dir}")
+    # print(f"Carry Limit: {carry_limit}")
+    # print(f"Cost per Step: {cost_per_step}")
+    # print(f"Index: {grid_index}")
+    # print("Results: ")
+
     d = load_jsonl(result_file)[0]
     d['dataset_name'] = dataset_name
     d['method'] = method
+    d['model_name'] = model_name
 
     try:
         grid_string = d['grid']
         agent_solution = extract_final_answer(d['response'])
-
+        # print(len(agent_solution))
+        # print(agent_solution)
         if not isinstance(agent_solution, list):
             raise Exception("Invalid solution")
         energy, returns_to_start, invalid_move = check_energy_result(
@@ -46,6 +59,10 @@ for i, result_file in enumerate(RESULT_FILES):
             2,
             0.3
         )
+
+        # print(f"Energy: {energy}")
+        # print(f"Returns to start: {returns_to_start}")
+        # print(f"Invalid move: {invalid_move}")
 
         d['energy'] = energy
         d['returns_to_start'] = returns_to_start

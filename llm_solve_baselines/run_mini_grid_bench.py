@@ -5,6 +5,7 @@ from openrouter import call_openrouter
 import gymnasium as gym
 from minigrid.wrappers import *
 import re
+from tqdm import tqdm
 
 def to_string(messages):
     return "\n".join([f"{m['role']}: {m['content']}" for m in messages])
@@ -179,7 +180,10 @@ TASKS = {
 NUM_GRIDS = 100
 GRID_SEEDS = list(range(NUM_GRIDS))
 
-MODEL = 'openai/o3-mini'
+# MODEL = 'openai/o3-mini'
+# MODEL = 'openai/gpt-4o'
+MODEL = 'google/gemini-2.5-pro'
+# MODEL = 'anthropic/claude-3.7-sonnet'
 
 METHODS = {
     "direct": run_direct_prompt,
@@ -196,7 +200,7 @@ for task, task_info in TASKS.items():
     print(f"Running task: {task_name}")
     env = gym.make(task_name)
 
-    for seed in GRID_SEEDS:
+    for seed in tqdm(GRID_SEEDS, total=len(GRID_SEEDS)):
         print(f"Processing grid {seed+1}/{NUM_GRIDS}")
         env.reset(seed=seed)
 
@@ -204,7 +208,8 @@ for task, task_info in TASKS.items():
 
         for method_name, method_func in METHODS.items():
             print(f"Running method: {method_name}")
-            output_dir = f"minigrid_results/{task}/{method_name}"
+            model_name = MODEL.replace("/", '-')
+            output_dir = f"minigrid_results/{model_name}/{task}/{method_name}"
             output_file_name = f"{output_dir}/{seed}.json"
 
             # check if file already exists
@@ -212,7 +217,12 @@ for task, task_info in TASKS.items():
                 print(f"File {output_file_name} already exists. Skipping.")
                 continue
 
-            input_prompt, response = method_func(base_prompt, env, first_step_prompt)
+            try:
+                input_prompt, response = method_func(base_prompt, env, first_step_prompt)
+
+            except Exception as e:
+                print(f"Error occurred while running method {method_name} seed {seed}: {e}")
+                continue
 
             d = {
                 "task": task,
