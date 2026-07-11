@@ -1,3 +1,5 @@
+# Provide pseudocode of the greedy algorithm and get llm to generate code
+
 def solve_grid(grid, start_position, carry_limit, cost_per_step, is_diagonals_allowed, max_actions):
     """
     grid: a list of lists representing the 2D grid (grid[row][col]).
